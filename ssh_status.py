@@ -27,6 +27,20 @@ HOST_NAME='user@hostname'
 class App:
 
     status_labels = {}
+    status_colors = {}
+
+    # coloring status label
+    def StatusColoring(self, status):
+        statusColor = 'grey'
+        if(status == 'active'):
+            statusColor = 'green'
+        elif(status == 'failed'):
+            statusColor = 'red'
+        elif(status == 'sent'):    
+            statusColor = 'yellow'
+        else:
+            statusColor = 'grey'
+        return statusColor
 
     def Killme():
         self.root.quit()
@@ -39,7 +53,6 @@ class App:
         print ("process restart")
         global status_labels
         stdout = "sent"
-        ## async call the status update
         
         thr = threading.Thread(target=self.systemctlRestartProcess, args=(process,))
         thr.start() # Will run "foo"
@@ -73,7 +86,8 @@ class App:
         if 'Linux' in uname.stdout:
             #command = "df -h / | tail -n1 | awk '{print $5}'"
             command = "sudo systemctl status httpd"
-            command = "systemctl list-units --type=service --state=running"
+            command = "systemctl list-units --type=service"
+            #command = "systemctl list-units --type=service --state=running"
             stdout = c.run(command, hide=True).stdout.strip()
             return stdout
 
@@ -83,7 +97,9 @@ class App:
 
     def createButtons(self):
         global status_labels
+        global status_colors
         status_labels = {}
+        status_colors = {}
         SERVICE_UNIT_INDEX = 0
         SERVICE_LOAD_INDEX = 1
         SERVICE_ACTIVE_INDEX = 2
@@ -93,6 +109,9 @@ class App:
         CONNECTION = Connection(HOST_NAME)
 
         status_to_parse = self.systemctlStatus(CONNECTION)
+
+        processName = ''
+        processStatus = ''
 
         if re.search("\.service", status_to_parse):
 
@@ -108,31 +127,28 @@ class App:
                     #tag = "["+line[line.find("[")+1:line.find("]")]+"]"
                     line = " ".join(line.split())
                     status_part = line.split(" ")
-                    
-                    # print(status_part[SERVICE_UNIT_INDEX],' :: ', status_part[SERVICE_ACTIVE_INDEX])
 
+                    if re.search("failed", line):
+                        processName = status_part[SERVICE_UNIT_INDEX+1].split('.')[0]
+                        processStatus = status_part[SERVICE_ACTIVE_INDEX+1]
+                        # print(status_part[SERVICE_UNIT_INDEX+1],' :: ', status_part[SERVICE_ACTIVE_INDEX+1])
+                    else:
+                        processName = status_part[SERVICE_UNIT_INDEX].split('.')[0]
+                        processStatus = status_part[SERVICE_ACTIVE_INDEX]
 
-                    # self._httpd_btn = Button(self.root, height=1, width=10, text="Httpd", 
-                    # command=lambda: self.HTTPD())
-                    # self._httpd_btn.pack(fill=X)
-
-                    # for url in urls:
-                    # onclick = lambda url=url[1]: urlOpen(url)
-                    processName = status_part[SERVICE_UNIT_INDEX].split('.')[0]
-                    processStatus = status_part[SERVICE_ACTIVE_INDEX]
-                    
                     onclick = lambda d=processName: self.restartProcess(d)
                     button_button = Button(self.root, height = 1, command = onclick, width = 20,
                         text = processName)
                     button_button.grid(row = i, column = 1)
-
                     status_labels[processName] = StringVar(self.root)
                     button_label = Label(self.root, height = 1, text=processStatus, textvariable = status_labels[processName])
                     button_label.grid(row = i, column = 2)
+                    status_colors[processName] = button_label
 
 
     def statusUpdate(self):
         global status_labels
+        global status_colors
         SERVICE_UNIT_INDEX = 0
         SERVICE_LOAD_INDEX = 1
         SERVICE_ACTIVE_INDEX = 2
@@ -141,12 +157,12 @@ class App:
         CONNECTION = Connection(HOST_NAME)
 
         status_to_parse = self.systemctlStatus(CONNECTION)
+        processName = ""
+        processStatus = ""
+        statusColor = ""
 
-
-        print("hello")
+        print("Status update")
         self.root.after(2000, self.statusUpdate)  # reschedule event in 2 seconds
-
-        # print(status_to_parse)
 
         if re.search("\.service", status_to_parse):
 
@@ -156,28 +172,18 @@ class App:
             for i, line in enumerate(content.splitlines()):
 
                 if re.search("\.service", line):
-                    #tag = "["+line[line.find("[")+1:line.find("]")]+"]"
                     line = " ".join(line.split())
                     status_part = line.split(" ")
                     
-                    print(status_part[SERVICE_UNIT_INDEX],' :: ', status_part[SERVICE_ACTIVE_INDEX])
+                    if re.search("failed", line):
+                        processName = status_part[SERVICE_UNIT_INDEX+1].split('.')[0]
+                        status_labels[processName].set(status_part[SERVICE_ACTIVE_INDEX+1])
+                    else:
+                        processName = status_part[SERVICE_UNIT_INDEX].split('.')[0]
+                        status_labels[processName].set(status_part[SERVICE_ACTIVE_INDEX])
 
-
-                    # self._httpd_btn = Button(self.root, height=1, width=10, text="Httpd", 
-                    # command=lambda: self.HTTPD())
-                    # self._httpd_btn.pack(fill=X)
-
-                    # for url in urls:
-                    # onclick = lambda url=url[1]: urlOpen(url)
-                    processName = status_part[SERVICE_UNIT_INDEX].split('.')[0]
-                    status_labels[processName].set(status_part[SERVICE_ACTIVE_INDEX])
-                    # onclick = lambda d=processName: self.restartProcess(d)
-                    # button_button = Button(self.root, height = 1, command = onclick, width = 20,
-                    #     text = processName)
-                    # button_button.grid(row = i, column = 1)
-                    # button_label = Label(self.root, height = 1, text=processStatus, textvariable = lambda: str(processName))
-                    # button_label.grid(row = i, column = 2)
-
+                    status_labels[processName].set(processStatus)
+                    status_colors[processName].config(fg = self.StatusColoring(processStatus))
 
 
     def __init__(self):
@@ -197,7 +203,7 @@ class App:
 
         self.createButtons();
 
-        # scroll bar to root
+        #scroll bar to root
         # self.yscrollbar=Scrollbar(self.root, orient=VERTICAL, command=self.root.yview)
         # self.yscrollbar.pack(side=RIGHT, fill=Y)
 
