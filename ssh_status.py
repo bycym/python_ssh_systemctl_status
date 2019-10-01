@@ -16,15 +16,27 @@
 import threading
 import os
 import re
-# import sys
-from Tkinter import *
-import tkFont
-import ttk
 import time
+import sys
+
+### python 3
+#from tkinter import *
+#from tkinter import font
+## end python 3
+
+### python 2
+import tkFont
+from Tkinter import *
+## end python 2
+
+
+
 
 from fabric import Connection
 
-HOST_NAME='user@hostname'
+HOST_NAME='user@server'
+CURSOR_UP_ONE = '\x1b[1A'
+ERASE_LINE = '\x1b[2K'
 
 class App:
 
@@ -51,6 +63,11 @@ class App:
 
     # def RefreshMenu(self):
     #     print("refresh")
+
+    def delete_last_lines(self, n=1):
+        for _ in range(n):
+            sys.stdout.write(CURSOR_UP_ONE)
+            sys.stdout.write(ERASE_LINE)
 
     def on_frame_configure(self, event=None):
         self.tasks_canvas.configure(scrollregion=self.tasks_canvas.bbox("all"))
@@ -86,14 +103,12 @@ class App:
         # result = pool.apply_async(self.systemctlRestartProcess, process) # Evaluate "f(10)" asynchronously calling callback when finished.
         # stdout = self.systemctlRestartProcess(Connection('balazs@iekes'), process)
 
-    def logProcess(self, event):
-        print('event: ', event)
-        print('process: ', process)
+    def logProcess(self, event, processName):
         print ("process log")
         # global status_labels
         # stdout = "sent"
 
-        thr = threading.Thread(target=self.systemctlLog, args=(process,))
+        thr = threading.Thread(target=self.systemctlLog, args=(processName,))
         thr.start() # Will run "foo"
         # thr.is_alive() # Will return whether foo is running currently
         # thr.join() # Will wait till "foo" is done
@@ -130,6 +145,18 @@ class App:
         err = "#ERROR: No idea how to get the status {}!".format(uname)
         raise Exit(err)
 
+
+    def processLogCommand(self, process):
+        command = "sudo journalctl -u " + process + " | tail -n 10"
+        if(process == 'httpd'):
+            command = 'sudo tail -n 10 /etc/httpd/logs/error_log'
+        elif(process == 'failed'):
+            command = 'red'
+        elif(process == 'sent'):    
+            command = 'grey'
+        return command
+
+
     def systemctlLog(self, process):
         print("connect to: " + str(process))
         c = Connection(HOST_NAME)
@@ -137,10 +164,15 @@ class App:
         if 'Linux' in uname.stdout:
             #command = "df -h / | tail -n1 | awk '{print $5}'"
             # command = "sudo systemctl status httpd"
-            command = "sudo journalctl -u " + process + " | tail -n 5"
+            # command = "sudo journalctl -u " + process + " | tail -n 5"
+            command = self.processLogCommand(process)
+            print(command)
             #command = "systemctl list-units --type=service --state=running"
             stdout = c.run(command, hide=True).stdout.strip()
+            print("--- log -------------------------")
             print(stdout)
+            print("---------------------------------")
+            print(">")
             return stdout
 
         err = "#ERROR: No idea how to get those logs {}!".format(uname)
@@ -160,8 +192,12 @@ class App:
         if(CONNECTION):
 
             status_to_parse = self.systemctlStatus(CONNECTION)
+            
+            string_to_print = time.ctime() + " :: Status update\r"
+            self.delete_last_lines()
+            print(string_to_print)
+            #print(string_to_print, end="\r") # python3
 
-            print("Status update")
             self.root.after(2000, self.statusUpdate)  # reschedule event in 2 seconds
 
             if re.search("\.service", status_to_parse):
@@ -227,14 +263,17 @@ class App:
                         processStatus = status_part[SERVICE_ACTIVE_INDEX]
 
                     onclickButton = lambda d=processName: self.restartProcess(d)
-                    onclickLabel = lambda d=processName: self.logProcess(d)
+                    
                     button_button = Button(self.tasks_frame, height = 1, command = onclickButton, width = 20,
                         text = processName)
                     button_button.grid(row = i, column = 1)
                     status_labels[processName] = StringVar(self.tasks_frame)
                     button_label = Label(self.tasks_frame, height = 1, text=processStatus, textvariable = status_labels[processName])
                     button_label.grid(row = i, column = 2)
-                    button_label.bind("<Button-1>", onclickLabel)
+
+                    ## click on label
+                    onclickLabel = lambda event, arg=processName: self.logProcess(event, arg)
+                    button_label.bind("<ButtonPress-1>", onclickLabel)
                     status_colors[processName] = button_label
 
                     status_labels[processName].set(processStatus)
@@ -253,6 +292,7 @@ class App:
         self.root=Tk()
         self.root.title("SSH Status")
         # self.root.geometry('10x10+0+0')
+        #self.dFont=font.Font(family="Arial", size=14) # python 3
         self.dFont=tkFont.Font(family="Arial", size=14)
 
         # Menu elements
@@ -276,7 +316,9 @@ class App:
 
         self.canvas_frame = self.tasks_canvas.create_window((0, 0), window=self.tasks_frame, anchor="n")
 
-
+        print(">>>> Start <<<<")
+        print("connect to: " + HOST_NAME)
+        print(">")
         self.createButtons();
 
         self.text_frame.pack(side=BOTTOM, fill=X)
